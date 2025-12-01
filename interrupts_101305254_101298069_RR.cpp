@@ -37,7 +37,7 @@ std::tuple<std::string, std::string> run_simulation(std::vector<PCB> list_proces
     //make the output table (the header row)
     execution_status = print_exec_header();
 
-    unsigned int r = 5; // As a test, R = 5 is used.
+    unsigned int r = 100;
     unsigned int r_remaining = r;
 
     //Loop while till there are no ready or waiting processes.
