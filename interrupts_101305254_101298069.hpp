@@ -307,17 +307,15 @@ void terminate_process(PCB &running, std::vector<PCB> &job_queue) {
 
 // Set the process in the ready queue to running
 void run_process(PCB &running, std::vector<PCB> &job_queue, std::vector<PCB> &ready_queue, unsigned int current_time) {
-    // todo: refactor this comment.
-    // NOTE: THIS WAS CHANGED FROM READY_QUEUE.back() to READY_QUEUE.front()
-    // To help with better queue managment.
-    // For example, in RR: push_back() process,
-    // A, B, C (A runs first, then B, then C)
-    // process that gets to run should be 'A' (i.e: queue.front(), not queue.back())
+    // NOTE: These two lines of code from the template were changed from ready_queue.back() -> ready_queue.front() and ready_queue.pop_back() to ready_queue.erase(ready_queue.begin())
+    // The reason for this is to facilitate how RR works. It uses a queue to keep track of which processes to run next.
+    // However, since this code previously used .back(), this would effectivally act like a stack, and not a queue.
+    // A solution could be to 1) invert the queue before calling this function, or 2) use a deque, but for simplicity sakes, this was used instead.
 
-    // As such, the algorithm for EP will appear 'inverted' from the template.
+    // This is ALSO the reason the algorithm for EP in EP appears "inverted" compare to the template's FCFS (now erased).
     running = ready_queue.front();
-    // std::vector has no pop_front(); remove the first element via erase
     ready_queue.erase(ready_queue.begin());
+
     running.start_time = current_time;
     running.state = RUNNING;
     sync_queue(job_queue, running);

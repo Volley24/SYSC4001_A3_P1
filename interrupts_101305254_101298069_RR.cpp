@@ -52,7 +52,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
         // i) A process may not be able to be assigned memory, as partitions have been allocated in such a way that said process cannot be allocated.
         // ii) As a result of this, a process may be put into the READY queue AFTER it's intended arrival time. The IF statement was changed to allow this.
         for(auto &process : list_processes) {
-            
+
             if(process.state == NOT_ASSIGNED && current_time >= process.arrival_time) {
                 //if so, assign memory and put the process into the ready queue
                 bool success = assign_memory(process);
@@ -93,8 +93,8 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
         bool should_run_new_process = false;
 
         if (running.state == RUNNING) {
-
-            r_remaining --; // RR time remaining left
+ 
+            r_remaining --; // RR time remaining left [NEW FOR RR!]
             running.remaining_time --; // Global remaining time left 
             running.cpu_remamining_before_io --; // Not used if io_duration == 0
 
@@ -117,13 +117,12 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                 wait_queue.push_back(running);
                 sync_queue(job_list, running);
 
-                cout << "P" << running.PID << ": is now waiting for I/O to complete. i/o remaining = " << running.io_duration << endl;
-
                 // RUNNING -> WAITING
                 execution_status += print_exec_status(current_time, running.PID, RUNNING, WAITING);
 
                 should_run_new_process = true; // a process is waiting, so we need to run one
             } else if (r_remaining == 0) {
+                // [NEW FOR RR!]
                 // RUNNING -> READY
                 // If the RR time quantum has been reached, the process running must be kicked out. 
                 // It will be moved to ready, as it had been interrupted in the middle of an I/O sequence.
@@ -152,6 +151,8 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
         // READY -> RUNNING
         if (should_run_new_process && !ready_queue.empty()) {
+            // No sorting needed! Our ready_queue is already in the correct order.
+            // The first element is the process to run.
             
             r_remaining = r; // Reset the RR counter for the next process to run
             run_process(running, job_list, ready_queue, current_time);

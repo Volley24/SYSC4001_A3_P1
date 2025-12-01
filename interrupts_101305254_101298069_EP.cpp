@@ -52,16 +52,22 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
         // 2) Manage the wait queue
         // 3) Schedule processes from the ready queue
 
-        //Population of ready queue is given to you as an example.
-        //Go through the list of proceeses
+        // The template for the population of the ready was slightly modified.
+        // i) A process may not be able to be assigned memory, as partitions have been allocated in such a way that said process cannot be allocated.
+        // ii) As a result of this, a process may be put into the READY queue AFTER it's intended arrival time. The IF statement was changed to allow this.
         for(auto &process : list_processes) {
-            if(process.arrival_time == current_time) {//check if the AT = current time
+            
+            if(process.state == NOT_ASSIGNED && current_time >= process.arrival_time) {
                 //if so, assign memory and put the process into the ready queue
-                assign_memory(process);
+                bool success = assign_memory(process);
 
-                process.state = READY;  //Set the process state to READY
-                ready_queue.push_back(process); //Add the process to the ready queue
-                job_list.push_back(process); //Add it to the list of processes
+                if (!success) {
+                    continue; // ERROR: No memory for new process! Process must stay in NEW state.
+                }
+
+                process.state = READY;  // Set the process state to READY
+                ready_queue.push_back(process); // Add the process to the ready queue
+                job_list.push_back(process); // Add it to the list of processes
 
                 execution_status += print_exec_status(current_time, process.PID, NEW, READY);
             }
@@ -70,7 +76,9 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
         ///////////////////////MANAGE WAIT QUEUE/////////////////////////
         //This mainly involves keeping track of how long a process must remain in the ready queue
 
-        // WAITING -> READY
+        // WAITING -> READY process
+        // This process involves decrementing I/O remaining ticks for each process in the WAITING queue.
+        // Whenever said process is finished I/O, it is re-added to the READY queue.
         for (auto &process : wait_queue) {
             if (process.state == WAITING) {
                 process.io_remaining --;
@@ -94,12 +102,16 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
             if (running.remaining_time == 0) {
                 // RUNNING -> TERMINATED
+                // If a process doesn't have any remaining time left, TERMINATE it.
+
                 terminate_process(running, job_list);
                 execution_status += print_exec_status(current_time, running.PID, RUNNING, TERMINATED);
 
                 should_run_new_process = true; // a process terminated, so we need to run one
             } else if (running.io_duration != 0 && running.cpu_remamining_before_io == 0) {
-                // WAITING -> READY
+                // RUNNING -> WAITING
+                // If a process has reached a point where it needs to execute I/O, move it to the WAIT queue.
+
                 running.state = WAITING;
                 running.io_remaining = running.io_duration; // update corresponding i/o remaining with i/o duration
                 running.cpu_remamining_before_io = running.io_freq;
@@ -123,7 +135,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
         // READY -> RUNNING
         if (should_run_new_process && !ready_queue.empty()) {
-            // trigger algo to select new process from rdy queue to run while this one is waiting.
+            // Sort the ready queue and grab the FIRST entry
             EP(ready_queue);
             run_process(running, job_list, ready_queue, current_time);
 
