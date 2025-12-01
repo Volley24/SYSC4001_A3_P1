@@ -1,0 +1,12 @@
+Partition 1: FREE (40MB)
+Partition 2: FREE (25MB)
+Partition 3: FREE (15MB)
+Partition 4: FREE (10MB)
+Partition 5: FREE (8MB)
+Partition 6: FREE (2MB)
+
+=============================
+TOTAL MEMORY USED = 0MB
+TOTAL FREE MEMORY AVAILABLE = 100MB
+USABLE MEMORY AVAILBLE = 100MB
+

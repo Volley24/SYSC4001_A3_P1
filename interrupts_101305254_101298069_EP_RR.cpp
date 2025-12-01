@@ -48,7 +48,7 @@ void EP_RR(std::vector<PCB> &ready_queue) {
             );
 }
 
-std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std::vector<PCB> list_processes) {
+std::tuple<std::string, std::string> run_simulation(std::vector<PCB> list_processes) {
 
     std::vector<PCB> ready_queue;   //The ready queue of processes
     std::vector<PCB> wait_queue;    //The wait queue of processes
@@ -66,6 +66,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
     idle_CPU(running);
 
     std::string execution_status;
+    std::string memory_output;
 
     //make the output table (the header row)
     execution_status = print_exec_header();
@@ -101,6 +102,8 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                 }
 
                 process.state = READY;  // Set the process state to READY
+                // record time when the process entered READY
+                process.ready_enter_time = current_time;
                 ready_queue.push_back(process); // Add the process to the ready queue
                 job_list.push_back(process); // Add it to the list of processes
 
@@ -128,6 +131,9 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                 if (process.io_remaining == 0) {
                     // Put the waiting process back into the ready queue, as it has finished I/O.
                     process.state = READY;  
+
+                    // record when entering READY after I/O
+                    process.ready_enter_time = current_time;
                     ready_queue.push_back(process); 
                     sync_queue(job_list, process);
 
@@ -165,13 +171,26 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                 // RUNNING -> TERMINATED
                 // If a process doesn't have any remaining time left, TERMINATE it.
 
-                terminate_process(running, job_list);
+                // set finish time for turnaround calculation
+                running.finish_time = current_time;
+                terminate_process(running, job_list, current_time);
                 execution_status += print_exec_status(current_time, running.PID, RUNNING, TERMINATED);
 
                 should_run_new_process = true; // a process terminated, so we need to run one
             }else if (running.io_duration != 0 && running.cpu_remamining_before_io == 0) {
                 // RUNNING -> WAITING
                 // If a process has reached a point where it needs to execute I/O, move it to the WAIT queue.
+
+                // Find the I/O intervals
+                int interval = 0;
+                if (running.last_io_time != -1) {
+                    interval = current_time - running.last_io_time;
+                } else {
+                    interval = current_time - running.start_time;
+                }
+                running.io_interval_sum += interval;
+                running.io_interval_count += 1;
+                running.last_io_time = current_time;
 
                 running.state = WAITING;
                 running.io_remaining = running.io_duration; // update corresponding i/o remaining with i/o duration
@@ -237,7 +256,53 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
     std::cout << "Using RR with R = " << r << "ms" << std::endl;
 
-    return std::make_tuple(execution_status);
+    // Record memory usage snapshot (written to memory_output file)
+    memory_output += record_memory_usage(job_list);
+
+    // Compute metrics: Throughput, Avg Wait Time, Avg Turnaround Time, Avg Response Time 
+    int total_wait = 0;
+    int total_turnaround = 0;
+    int completed_jobs = 0;
+    int max_finish_time = -1;
+    int total_first_response = 0;
+    int first_response_count = 0;
+
+    // Sum up all the waiting times
+    for (auto &process : job_list) {
+        total_wait += process.total_wait_time;
+
+        if (process.finish_time != -1) {
+            total_turnaround += (process.finish_time - process.arrival_time);
+            completed_jobs += 1;
+            if (process.finish_time > max_finish_time) 
+				max_finish_time = process.finish_time;
+        }
+
+        if (process.first_response_time != -1) {
+            total_first_response += (process.first_response_time - process.arrival_time);
+            first_response_count += 1;
+        }
+    }
+
+    int simulation_end_time = (max_finish_time != -1) ? max_finish_time : current_time;
+
+    // Math to figure out averages!
+    double throughput_proc_per_tick = 0.0;
+    if (simulation_end_time > 0 && completed_jobs > 0) throughput_proc_per_tick = (double) completed_jobs / (double) simulation_end_time;
+    double avg_wait = (completed_jobs > 0) ? (double) total_wait / (double) completed_jobs : 0.0;
+    double avg_turnaround = (completed_jobs > 0) ? (double) total_turnaround / (double) completed_jobs : 0.0;
+    double avg_response_time = (first_response_count > 0) ? (double) total_first_response / (double) first_response_count : 0.0;
+
+    stringstream metrics; // buffer so we can << all of our metrics
+    metrics << "\n=== Simulation Metrics ===\n";
+    metrics << "Throughput (processes per ms): " << throughput_proc_per_tick << "\n";
+    metrics << "Average Turnaround Time: " << avg_turnaround << " ms\n";
+    metrics << "Average Wait Time: " << avg_wait << " ms\n";
+    metrics << "Average Response Time (arrival -> first run): " << avg_response_time << " ms\n";
+
+    execution_status += metrics.str();
+
+    return std::make_tuple(execution_status, memory_output);
 }
 
 
@@ -256,9 +321,13 @@ int main(int argc, char** argv) {
     // Default output file name.
     // So that there are no breaking changes.
     auto output_file_name = "execution.txt";
+    auto mem_file_name = "memory_output.txt";
 
-    if (argc == 3) {
+    if (argc >= 3) {
         output_file_name = argv[2];
+    }
+    if (argc >= 4) {
+        mem_file_name = argv[3];
     }
 
     //Open the input file
@@ -284,10 +353,11 @@ int main(int argc, char** argv) {
     input_file.close();
 
     //With the list of processes, run the simulation
-    auto [exec] = run_simulation(list_process);
+    auto [exec, mem] = run_simulation(list_process);
 
-    // Write to the OUTPUT file
+    // Write to the OUTPUT files
     write_output(exec, output_file_name);
+    write_output(mem, mem_file_name);
 
     return 0;
 }

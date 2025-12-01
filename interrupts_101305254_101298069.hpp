@@ -9,16 +9,16 @@
 #ifndef INTERRUPTS_HPP_
 #define INTERRUPTS_HPP_
 
-#include<iostream>
-#include<fstream>
-#include<string>
-#include<vector>
-#include<tuple>
-#include<random>
-#include<utility>
-#include<sstream>
-#include<iomanip>
-#include<algorithm>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <tuple>
+#include <random>
+#include <utility>
+#include <sstream>
+#include <iomanip>
+#include <algorithm>
 
 using namespace std;
 
@@ -72,6 +72,15 @@ struct PCB{
     /* Extra variables used! */
     unsigned int    cpu_remamining_before_io; // the amount of CPU time remaining before the next I/O call
     unsigned int    io_remaining; // The amount of I/O remaining until the process is done waiting
+
+    /* Extra variables for metrics */
+    unsigned int    total_wait_time; // total time spent in READY
+    int             ready_enter_time; // time when process entered READY
+    int             finish_time; // time when process terminated
+    unsigned int    io_interval_sum; // sum of CPU intervals between IOs
+    unsigned int    io_interval_count; // number of IO intervals recorded
+    int             last_io_time; // time of last IO transition (to compute intervals)
+        int             first_response_time; // -1 if not recorded
 };
 
 //------------------------------------HELPER FUNCTIONS FOR THE SIMULATOR------------------------------
@@ -159,7 +168,6 @@ std::string print_exec_header() {
     
         // Print top border
         buffer << "+" << std::setfill('-') << std::setw(tableWidth) << "+" << std::endl;
-        std::cout << "+" << std::setfill('-') << std::setw(tableWidth) << "+" << std::endl;
 
         // Print headers
         buffer  << "|"
@@ -195,8 +203,6 @@ std::string print_exec_status(unsigned int current_time, int PID, states old_sta
             << std::setw(10) << new_state
             << std::setw(2) << "|" << std::endl;
 
-    std::cout << "P" << PID << ": " << old_state << " -> " << new_state << endl;
-
     return buffer.str();
 }
 
@@ -208,6 +214,45 @@ std::string print_exec_footer() {
     buffer << "+" << std::setfill('-') << std::setw(tableWidth) << "+" << std::endl;
 
     return buffer.str();
+}
+
+string record_memory_usage(vector<PCB> &job_list) {
+	stringstream buffer;
+
+	int total_memory_used = 0;
+	int free_memory_available = 0;
+	int usable_memory_available = 0;
+	for (auto &partition : memory_paritions){
+		buffer << "Partition " << partition.partition_number << ": ";
+
+		if (partition.occupied == -1) {
+			free_memory_available += partition.size;
+			usable_memory_available += partition.size;
+			buffer << "FREE (" << partition.size << "MB)";
+		}else {
+			// Need to access process to find how much space it uses
+			int size_used_by_process = -1;
+			for (auto &process : job_list) {
+				if (process.PID == partition.occupied) {
+					// Match found.
+					size_used_by_process = process.size;
+				}
+			}
+			// Total free memory available includes internal fragmentation.
+			free_memory_available += (partition.size - size_used_by_process);
+
+			total_memory_used += partition.size;
+			buffer << "OCCUPIED by process PID " << partition.occupied << " (size = " << partition.size << "MB, used = " << size_used_by_process << "MB)";
+		}
+		buffer << endl;
+	}
+
+	buffer << endl << "=============================" << endl;
+	buffer << "TOTAL MEMORY USED = " << total_memory_used << "MB" << endl;
+	buffer << "TOTAL FREE MEMORY AVAILABLE = " << free_memory_available << "MB" << endl;
+	buffer << "USABLE MEMORY AVAILBLE = " << usable_memory_available << "MB" << endl << endl;
+
+	return buffer.str();
 }
 
 // Synchronize the process in the process queue
@@ -283,6 +328,15 @@ PCB add_process(std::vector<std::string> tokens) {
     process.cpu_remamining_before_io = process.io_freq;
     process.io_remaining = 0;
 
+    // Initialize metrics
+    process.total_wait_time = 0;
+    process.ready_enter_time = -1;
+    process.finish_time = -1;
+    process.io_interval_sum = 0;
+    process.io_interval_count = 0;
+    process.last_io_time = -1;
+    process.first_response_time = -1;
+
     return process;
 }
 
@@ -299,9 +353,13 @@ bool all_process_terminated(std::vector<PCB> processes) {
 }
 
 // Terminates a given process
-void terminate_process(PCB &running, std::vector<PCB> &job_queue) {
+void terminate_process(PCB &running, std::vector<PCB> &job_queue, unsigned int current_time) {
     running.remaining_time = 0;
     running.state = TERMINATED;
+    // set finish_time if not already set
+    if (running.finish_time == -1) {
+        running.finish_time = current_time;
+    }
     free_memory(running);
     sync_queue(job_queue, running);
 }
@@ -317,7 +375,23 @@ void run_process(PCB &running, std::vector<PCB> &job_queue, std::vector<PCB> &re
     running = ready_queue.front();
     ready_queue.erase(ready_queue.begin());
 
+    // accumulate wait time (READY -> RUNNING)
+    if (running.ready_enter_time != -1) {
+        running.total_wait_time += (current_time - running.ready_enter_time);
+        running.ready_enter_time = -1;
+    }
+
     running.start_time = current_time;
+    // initialize last_io_time on first run so inter-IO intervals use start_time
+    if (running.last_io_time == -1) {
+        running.last_io_time = current_time;
+    }
+
+    // record classical response time (arrival -> first run)
+    if (running.first_response_time == -1) {
+        running.first_response_time = current_time;
+    }
+
     running.state = RUNNING;
     sync_queue(job_queue, running);
 }
@@ -333,6 +407,15 @@ void idle_CPU(PCB &running) {
     running.size = 0;
     running.state = NOT_ASSIGNED;
     running.PID = -1;
+
+    // metrics defaults for the idle process
+    running.total_wait_time = 0;
+    running.ready_enter_time = -1;
+    running.finish_time = -1;
+    running.io_interval_sum = 0;
+    running.io_interval_count = 0;
+    running.last_io_time = -1;
+    running.first_response_time = -1;
 }
 
 #endif
