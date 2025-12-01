@@ -1,6 +1,0 @@
-| 0 | 10 | NEW | READY |
-| 0 | 10 | READY | RUNNING |
-| 5 | 10 | RUNNING | WAITING |
-| 6 | 10 | WAITING | READY |
-| 6 | 10 | READY | RUNNING |
-| 11 | 10 | RUNNING |TERMINATED |
