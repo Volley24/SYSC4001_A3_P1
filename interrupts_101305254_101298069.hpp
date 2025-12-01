@@ -3,6 +3,7 @@
  * @author Sasisekhar Govind
  * @brief template main.cpp file for Assignment 3 Part 1 of SYSC4001
  * 
+ * @author Maxim Creanga
  */
 
 #ifndef INTERRUPTS_HPP_
@@ -68,9 +69,9 @@ struct PCB{
     unsigned int    io_freq; // at what freq does I/O happen
     unsigned int    io_duration; // for how long I/O occurs when it does
 
-    /* Extra vars todo: explain this*/
-    unsigned int    cpu_remamining_before_io;
-    unsigned int    io_remaining;
+    /* Extra variables used! */
+    unsigned int    cpu_remamining_before_io; // the amount of CPU time remaining before the next I/O call
+    unsigned int    io_remaining; // The amount of I/O remaining until the process is done waiting
 };
 
 //------------------------------------HELPER FUNCTIONS FOR THE SIMULATOR------------------------------
